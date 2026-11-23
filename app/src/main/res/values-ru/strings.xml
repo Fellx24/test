@@ -5,6 +5,14 @@
     <string name="status_disconnected">Отключено</string>
     <string name="section_launch">Запуск</string>
     <string name="apply_in_telegram">Применить в Telegram</string>
+    <string name="youtube_title">YouTube</string>
+    <string name="youtube_summary">Обрабатывает домены YouTube в браузерах и сторонних клиентах. Прокси Telegram может работать одновременно.</string>
+    <string name="youtube_enable">Включить YouTube</string>
+    <string name="youtube_disable">Выключить YouTube</string>
+    <string name="youtube_permission_denied">Разрешите VPN-подключение для работы YouTube.</string>
+    <string name="youtube_start_failed">Не удалось запустить VPN для YouTube.</string>
+    <string name="youtube_stopping">Остановка…</string>
+    <string name="youtube_vpn_running">VPN для YouTube работает</string>
     <string name="copied">Скопировано</string>
     <string name="copy">Скопировать</string>
     <string name="direct_mode">Прямое</string>

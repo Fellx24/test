@@ -5,6 +5,14 @@
     <string name="status_disconnected">Disconnected</string>
     <string name="section_launch">Launch</string>
     <string name="apply_in_telegram">Apply in Telegram</string>
+    <string name="youtube_title">YouTube</string>
+    <string name="youtube_summary">Processes YouTube domains for browsers and other YouTube clients. The Telegram proxy can run at the same time.</string>
+    <string name="youtube_enable">Enable YouTube</string>
+    <string name="youtube_disable">Disable YouTube</string>
+    <string name="youtube_permission_denied">Allow the VPN connection to enable YouTube.</string>
+    <string name="youtube_start_failed">Could not start the YouTube VPN.</string>
+    <string name="youtube_stopping">Stopping…</string>
+    <string name="youtube_vpn_running">YouTube VPN is active</string>
     <string name="copied">Copied</string>
     <string name="copy">Copy</string>
     <string name="direct_mode">Direct</string>

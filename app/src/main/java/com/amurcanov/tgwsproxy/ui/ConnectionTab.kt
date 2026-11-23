@@ -10,7 +10,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
@@ -139,6 +141,7 @@ fun ConnectionTab(settingsStore: SettingsStore) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
             .padding(top = 0.dp, bottom = 16.dp)
     ) {
@@ -158,9 +161,7 @@ fun ConnectionTab(settingsStore: SettingsStore) {
         Spacer(modifier = Modifier.height(8.dp))
 
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
+            modifier = Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
             AppSectionCard(
@@ -266,6 +267,8 @@ fun ConnectionTab(settingsStore: SettingsStore) {
                 }
             }
         }
+        Spacer(modifier = Modifier.height(16.dp))
+        YoutubeControls()
     }
 }
 
