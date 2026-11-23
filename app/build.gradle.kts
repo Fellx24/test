@@ -6,7 +6,7 @@ plugins {
 }
 
 val updateRepository = providers.gradleProperty("updateRepository")
-    .orElse("Fellx24/tg-ws-proxy-android")
+    .orElse("Fellx24/test")
     .get()
 require(Regex("[A-Za-z0-9-]+/[A-Za-z0-9_.-]+").matches(updateRepository)) {
     "updateRepository must have the form GitHub-owner/repository"
