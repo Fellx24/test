@@ -7,7 +7,25 @@ echo.
 
 set "ROOT_DIR=%~dp0"
 
-set "SDK_PATH=your\path"
+set "LOCAL_TOOLS=%ROOT_DIR%.build-tools"
+set "SDK_PATH=%LOCAL_TOOLS%\sdk"
+set "ANDROID_HOME=%SDK_PATH%"
+set "ANDROID_SDK_ROOT=%SDK_PATH%"
+set "ANDROID_USER_HOME=%LOCAL_TOOLS%\android-user"
+set "GRADLE_USER_HOME=%LOCAL_TOOLS%\gradle"
+set "JAVA_HOME=%LOCAL_TOOLS%\jdk-21.0.13.1+2"
+set "CARGO_HOME=%LOCAL_TOOLS%\cargo"
+set "RUSTUP_HOME=%LOCAL_TOOLS%\rustup"
+set "CARGO_TARGET_DIR=%LOCAL_TOOLS%\cargo-target"
+set "RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu"
+set "LIBRARY_PATH=%RUSTUP_HOME%\toolchains\stable-x86_64-pc-windows-gnu\lib\rustlib\x86_64-pc-windows-gnu\lib\self-contained;%LIBRARY_PATH%"
+set "PATH=%CARGO_HOME%\bin;%RUSTUP_HOME%\toolchains\stable-x86_64-pc-windows-gnu\bin;%LOCAL_TOOLS%\w64devkit\bin;%SDK_PATH%\platform-tools;%JAVA_HOME%\bin;%PATH%"
+
+if not exist "%LOCAL_TOOLS%\cargo\bin\cargo-ndk.exe" if not exist "%LOCAL_TOOLS%\cargo\bin\cargo-ndk.bat" if not exist "%LOCAL_TOOLS%\cargo\bin\cargo-ndk" (
+    echo Error: local cargo-ndk is missing. Run cargo install cargo-ndk with CARGO_HOME set to %CARGO_HOME%.
+    exit /b 1
+)
+
 set "NDK_ROOT=%SDK_PATH%\ndk"
 
 if not exist "%NDK_ROOT%" (
@@ -31,12 +49,8 @@ if %errorlevel% neq 0 (
 )
 where cargo-ndk >nul 2>nul
 if %errorlevel% neq 0 (
-    echo Installing cargo-ndk...
-    cargo install cargo-ndk
-    if %errorlevel% neq 0 (
-        echo Error: failed to install cargo-ndk
-        exit /b 1
-    )
+    echo Error: local cargo-ndk is unavailable in PATH
+    exit /b 1
 )
 
 echo Ensuring Rust targets are installed...

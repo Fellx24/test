@@ -35,6 +35,25 @@ set APP_HOME=%DIRNAME%
 @rem Resolve any "." and ".." in APP_HOME to make it shorter.
 for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
 
+@rem Keep the Android build toolchain and Gradle cache inside this checkout.
+set "LOCAL_TOOLS=%APP_HOME%\.build-tools"
+if exist "%LOCAL_TOOLS%\gradle\wrapper\dists" set "GRADLE_USER_HOME=%LOCAL_TOOLS%\gradle"
+if exist "%LOCAL_TOOLS%\jdk-21.0.13.1+2\bin\java.exe" set "JAVA_HOME=%LOCAL_TOOLS%\jdk-21.0.13.1+2"
+if exist "%LOCAL_TOOLS%\sdk\platforms" (
+    set "ANDROID_HOME=%LOCAL_TOOLS%\sdk"
+    set "ANDROID_SDK_ROOT=%LOCAL_TOOLS%\sdk"
+    set "ANDROID_USER_HOME=%LOCAL_TOOLS%\android-user"
+)
+if exist "%LOCAL_TOOLS%\rustup\toolchains\stable-x86_64-pc-windows-gnu\bin\cargo.exe" (
+    set "CARGO_HOME=%LOCAL_TOOLS%\cargo"
+    set "RUSTUP_HOME=%LOCAL_TOOLS%\rustup"
+    set "CARGO_TARGET_DIR=%LOCAL_TOOLS%\cargo-target"
+    set "RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu"
+    set "PATH=%LOCAL_TOOLS%\cargo\bin;%LOCAL_TOOLS%\rustup\toolchains\stable-x86_64-pc-windows-gnu\bin;%LOCAL_TOOLS%\w64devkit\bin;%PATH%"
+)
+if exist "%LOCAL_TOOLS%\sdk\platform-tools" set "PATH=%LOCAL_TOOLS%\sdk\platform-tools;%PATH%"
+if defined JAVA_HOME set "PATH=%JAVA_HOME%\bin;%PATH%"
+
 @rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
 set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
 

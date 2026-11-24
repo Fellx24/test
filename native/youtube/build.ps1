@@ -1,9 +1,16 @@
 param(
-    [Parameter(Mandatory = $true)] [string] $Ndk,
-    [string] $Dependencies = (Join-Path $PSScriptRoot '../../../.build-tools')
+    [string] $Ndk,
+    [string] $Dependencies = (Join-Path $PSScriptRoot '../../.build-tools')
 )
 
 $ErrorActionPreference = 'Stop'
+$ndkRoot = Join-Path $Dependencies 'sdk/ndk'
+if ([string]::IsNullOrWhiteSpace($Ndk)) {
+    $Ndk = Get-ChildItem -LiteralPath $ndkRoot -Directory |
+        Sort-Object Name -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $Ndk) { throw "Android NDK was not found under $ndkRoot" }
 $Ndk = (Resolve-Path -LiteralPath $Ndk).Path
 $Dependencies = [System.IO.Path]::GetFullPath($Dependencies)
 New-Item -ItemType Directory -Path $Dependencies -Force | Out-Null
