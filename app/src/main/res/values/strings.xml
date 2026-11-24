@@ -10,6 +10,7 @@
     <string name="youtube_enable">Enable YouTube</string>
     <string name="youtube_disable">Disable YouTube</string>
     <string name="youtube_permission_denied">Accept the Android VPN request to continue.</string>
+    <string name="youtube_testing">Checking YouTube servers…</string>
     <string name="youtube_start_failed">Could not start the YouTube VPN.</string>
     <string name="youtube_stopping">Stopping…</string>
     <string name="youtube_vpn_running">YouTube VPN is active</string>

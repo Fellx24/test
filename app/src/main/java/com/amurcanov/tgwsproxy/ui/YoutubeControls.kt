@@ -64,11 +64,12 @@ internal fun YoutubeControls() {
                     if (permission == null) start() else requestVpn.launch(permission)
                 }
             },
-            enabled = status != Status.Starting && status != Status.Stopping,
+            enabled = status != Status.Starting && status != Status.Testing && status != Status.Stopping,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(stringResource(when (status) {
                 Status.On -> R.string.youtube_disable
+                Status.Testing -> R.string.youtube_testing
                 Status.Starting -> R.string.status_connecting
                 Status.Stopping -> R.string.youtube_stopping
                 else -> R.string.youtube_enable

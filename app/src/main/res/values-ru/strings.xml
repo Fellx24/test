@@ -10,6 +10,7 @@
     <string name="youtube_enable">Включить YouTube</string>
     <string name="youtube_disable">Выключить YouTube</string>
     <string name="youtube_permission_denied">Подтвердите запрос Android на подключение к VPN.</string>
+    <string name="youtube_testing">Проверка серверов YouTube…</string>
     <string name="youtube_start_failed">VPN для YouTube не запустился. Попробуйте включить его ещё раз.</string>
     <string name="youtube_stopping">Остановка…</string>
     <string name="youtube_vpn_running">VPN для YouTube включён</string>

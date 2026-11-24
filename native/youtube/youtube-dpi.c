@@ -17,6 +17,7 @@ static bool worker_started;
 static bool running;
 static int proxy_port;
 static int stop_fd = -1;
+static int proxy_profile;
 
 int run_youtube_socks(const union sockaddr_u *address)
 {
@@ -45,6 +46,9 @@ int run_youtube_socks(const union sockaddr_u *address)
 
 static void *proxy_worker(void *unused)
 {
+    char *args[16];
+    int argc = 0;
+
     (void)unused;
     static struct params defaults;
     static bool captured_defaults;
@@ -56,12 +60,31 @@ static void *proxy_worker(void *unused)
     optind = 1;
     optreset = 1;
 
-    char *args[] = {
-        "ciadpi", "--ip=127.0.0.1", "--proto=t", "--pf=443",
-        "--hosts=:" YOUTUBE_DOMAINS,
-        "--split=1+s", "--tlsrec=1+s", NULL
-    };
-    youtube_proxy_main(sizeof(args) / sizeof(args[0]) - 1, args);
+    args[argc++] = "ciadpi";
+    args[argc++] = "--ip=127.0.0.1";
+    args[argc++] = "--proto=t";
+    args[argc++] = "--pf=443";
+    args[argc++] = "--hosts=:" YOUTUBE_DOMAINS;
+
+    switch (proxy_profile) {
+        case 1:
+            /* Split the SNI and disorder the first TLS records. */
+            args[argc++] = "--split=1+s";
+            args[argc++] = "--disorder=3+s";
+            args[argc++] = "--tlsrec=1+s";
+            break;
+        case 2:
+            /* Fragment the TLS record in the middle of SNI. */
+            args[argc++] = "--tlsrec=3+s";
+            break;
+        default:
+            /* Existing split plus TLS-record method. */
+            args[argc++] = "--split=1+s";
+            args[argc++] = "--tlsrec=1+s";
+            break;
+    }
+    args[argc] = NULL;
+    youtube_proxy_main(argc, args);
 
     pthread_mutex_lock(&lock);
     running = false;
@@ -91,15 +114,19 @@ static void stop_proxy(void)
 }
 
 JNIEXPORT jint JNICALL
-Java_com_amurcanov_tgwsproxy_YoutubeDpi_start(JNIEnv *env, jobject self)
+Java_com_amurcanov_tgwsproxy_YoutubeDpi_start(JNIEnv *env, jobject self, jint profile)
 {
     (void)env;
     (void)self;
+    if (profile < 0 || profile > 2) return -1;
+
     pthread_mutex_lock(&lock);
     if (worker_started) {
         pthread_mutex_unlock(&lock);
         return -1;
     }
+    proxy_profile = profile;
+    proxy_port = 0;
     running = true;
     if (pthread_create(&worker, NULL, proxy_worker, NULL) != 0) {
         running = false;
