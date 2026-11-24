@@ -164,7 +164,6 @@ fun MainContent(settingsStore: SettingsStore) {
     val updateCheckIntervalHours by settingsStore.updateCheckIntervalHours.collectAsStateWithLifecycle(
         initialValue = UPDATE_CHECK_NEVER
     )
-    val updateLastCheckAt by settingsStore.updateLastCheckAt.collectAsStateWithLifecycle(initialValue = 0L)
     var pendingRelease by rememberSaveable { mutableStateOf<AppReleaseInfo?>(null) }
     val currentVersion = remember { "v${BuildConfig.VERSION_NAME.removePrefix("v")}" }
     val currentUpdatePostponeUntil by rememberUpdatedState(updatePostponeUntil)
@@ -190,47 +189,41 @@ fun MainContent(settingsStore: SettingsStore) {
         onDispose { LogManager.stopListening() }
     }
 
-    LaunchedEffect(updateCheckIntervalHours, updateLastCheckAt) {
+    LaunchedEffect(updateCheckIntervalHours) {
         if (updateCheckIntervalHours == UPDATE_CHECK_NEVER) return@LaunchedEffect
 
         val intervalMillis = updateIntervalHoursToMillis(updateCheckIntervalHours)
             ?: updateIntervalHoursToMillis(DEFAULT_UPDATE_CHECK_INTERVAL_HOURS)
             ?: 12L * 60L * 60L * 1000L
 
-        if (updateLastCheckAt > 0L) {
-            val nextCheckAt = updateLastCheckAt + intervalMillis
-            val now = System.currentTimeMillis()
-            if (nextCheckAt > now) {
-                delay(nextCheckAt - now)
+        while (isActive) {
+            val checkedAt = System.currentTimeMillis()
+            val release = fetchLatestReleaseInfo()
+
+            if (release == null) {
+                Log.w("TgWsProxy", "[WARN] Update check: no release info, local=$currentVersion")
+            } else {
+                val hasUpdate = isNewerVersion(currentVersion, release.versionTag)
+                val isPostponed =
+                    currentUpdatePostponeVersion == release.versionTag && checkedAt < currentUpdatePostponeUntil
+                Log.i(
+                    "TgWsProxy",
+                    "Update check: local=$currentVersion remote=${release.versionTag} newer=$hasUpdate postponed=$isPostponed"
+                )
+
+                if (hasUpdate && !isPostponed) {
+                    showUpdateDialog(release, checkedAt)
+                }
             }
-        }
 
-        if (!isActive) return@LaunchedEffect
-
-        val checkedAt = System.currentTimeMillis()
-        val release = fetchLatestReleaseInfo()
-
-        if (release == null) {
-            Log.w("TgWsProxy", "[WARN] Update check: no release info, local=$currentVersion")
-        } else {
-            val hasUpdate = isNewerVersion(currentVersion, release.versionTag)
-            val isPostponed =
-                currentUpdatePostponeVersion == release.versionTag && checkedAt < currentUpdatePostponeUntil
-            Log.i(
-                "TgWsProxy",
-                "Update check: local=$currentVersion remote=${release.versionTag} newer=$hasUpdate postponed=$isPostponed"
+            settingsStore.saveUpdateState(
+                lastCheckAt = checkedAt,
+                latestVersion = release?.versionTag ?: "",
+                error = if (release == null) context.getString(R.string.update_check_failed_short) else ""
             )
 
-            if (hasUpdate && !isPostponed) {
-                showUpdateDialog(release, checkedAt)
-            }
+            delay(intervalMillis)
         }
-
-        settingsStore.saveUpdateState(
-            lastCheckAt = checkedAt,
-            latestVersion = release?.versionTag ?: "",
-            error = if (release == null) context.getString(R.string.update_check_failed_short) else ""
-        )
     }
 
     Scaffold(

@@ -1,0 +1,37 @@
+diff --git a/src/hev-socks5-tunnel.c b/src/hev-socks5-tunnel.c
+index 74f0c10..630dbbb 100644
+--- a/src/hev-socks5-tunnel.c
++++ b/src/hev-socks5-tunnel.c
+@@ -310,0 +311,19 @@ exit:
++static bool
++youtube_host_matches (const char *host, const char *suffix)
++{
++    size_t host_len = strlen (host);
++    size_t suffix_len = strlen (suffix);
++
++    return (host_len >= suffix_len) &&
++           !strcmp (host + host_len - suffix_len, suffix) &&
++           ((host_len == suffix_len) ||
++            (host[host_len - suffix_len - 1] == '.'));
++}
++
++static bool
++youtube_udp_target (const char *host)
++{
++    return host && (youtube_host_matches (host, "youtube.com") ||
++                    youtube_host_matches (host, "googlevideo.com"));
++}
++
+@@ -339,0 +359,12 @@ udp_recv_handler (void *arg, struct udp_pcb *pcb, struct pbuf *p,
++    if (dns && (port == 443) && (addr->type == IPADDR_TYPE_V4)) {
++        const char *host;
++
++        host = hev_mapped_dns_lookup (dns, ntohl (ip_2_ip4 (addr)->addr));
++        if (youtube_udp_target (host)) {
++            /* YouTube QUIC bypasses the TCP-only DPI path; make it retry TCP. */
++            pbuf_free (p);
++            udp_recv (pcb, udp_drop_handler, NULL);
++            return;
++        }
++    }
++

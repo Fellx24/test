@@ -34,6 +34,16 @@ Get-PinnedSource (Join-Path $hevTunnel 'third-part/hev-task-system') 'heiher/hev
 Get-PinnedSource (Join-Path $hevTunnel 'third-part/lwip') 'heiher/lwip' '8115cd6150ab32500db3d4d8bd8ad7ec6648534c'
 Get-PinnedSource (Join-Path $hevTunnel 'third-part/yaml') 'heiher/yaml' '0c82efd10dc67b9e7f159d2c7f5d1dc3c1b5bc11'
 
+$hevPatch = Join-Path $PSScriptRoot 'hev-youtube-quic.patch'
+& git -C $hevTunnel apply --unidiff-zero --recount --check --ignore-space-change $hevPatch 2>$null
+if ($LASTEXITCODE -eq 0) {
+    & git -C $hevTunnel apply --unidiff-zero --recount --ignore-space-change $hevPatch
+    if ($LASTEXITCODE -ne 0) { throw 'Could not patch the HEV UDP relay.' }
+} else {
+    & git -C $hevTunnel apply --unidiff-zero --recount --reverse --check --ignore-space-change $hevPatch 2>$null
+    if ($LASTEXITCODE -ne 0) { throw 'The HEV source is neither clean nor patched as expected.' }
+}
+
 $patchedByeDpi = Join-Path $Dependencies 'youtube-byedpi-sources'
 New-Item -ItemType Directory -Path $patchedByeDpi -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $byeDpi 'main.c'), (Join-Path $byeDpi 'extend.c') -Destination $patchedByeDpi

@@ -106,6 +106,7 @@ class YoutubeVpnService : VpnService() {
             .setMtu(MTU)
             .addAddress(IPV4, 32)
             .addAddress(IPV6, 128)
+            .addDnsServer(DNS_IPV4)
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
             .addDisallowedApplication(packageName)
@@ -127,6 +128,12 @@ class YoutubeVpnService : VpnService() {
                       address: 127.0.0.1
                       port: $port
                       udp: 'udp'
+                    mapdns:
+                      address: $DNS_IPV4
+                      port: 53
+                      network: '100.64.0.0'
+                      netmask: '255.192.0.0'
+                      cache-size: 10000
                     misc:
                       log-level: error
                     """.trimIndent()
@@ -204,6 +211,7 @@ class YoutubeVpnService : VpnService() {
         private const val NOTIFICATION_ID = 102
         private const val MTU = 1500
         private const val IPV4 = "198.18.0.1"
+        private const val DNS_IPV4 = "198.18.0.2"
         private const val IPV6 = "fd00:7467:7773::1"
 
         private val engineLock = Mutex()
