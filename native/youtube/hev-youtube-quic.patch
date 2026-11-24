@@ -28,8 +28,8 @@ index 74f0c10..630dbbb 100644
 +
 +        host = hev_mapped_dns_lookup (dns, ntohl (ip_2_ip4 (addr)->addr));
 +        if (youtube_udp_target (host)) {
-+            /* YouTube QUIC bypasses the TCP-only DPI path; make it retry TCP. */
-+            pbuf_free (p);
++            /* Drop QUIC to let clients retry over TCP. lwIP redelivers p after
++             * creating the per-flow PCB, so the drop handler owns its release. */
 +            udp_recv (pcb, udp_drop_handler, NULL);
 +            return;
 +        }
