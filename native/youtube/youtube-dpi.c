@@ -1,6 +1,8 @@
 #include <jni.h>
 #include <pthread.h>
 
+#include "youtube-domains.h"
+
 /* Use ByeDPI's command-line parser without installing process-wide signal handlers. */
 #define main youtube_proxy_main
 #define run run_youtube_socks
@@ -56,10 +58,7 @@ static void *proxy_worker(void *unused)
 
     char *args[] = {
         "ciadpi", "--ip=127.0.0.1", "--proto=t", "--pf=443",
-        "--hosts=:youtube.com youtu.be youtube-nocookie.com youtubeeducation.com"
-        " googlevideo.com ytimg.com yt3.ggpht.com yt3.googleusercontent.com"
-        " youtube.googleapis.com youtubei.googleapis.com youtubeembeddedplayer.googleapis.com"
-        " www.googleapis.com",
+        "--hosts=:" YOUTUBE_DOMAINS,
         "--split=1+s", "--tlsrec=1+s", NULL
     };
     youtube_proxy_main(sizeof(args) / sizeof(args[0]) - 1, args);

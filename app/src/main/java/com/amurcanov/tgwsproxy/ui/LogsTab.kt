@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amurcanov.tgwsproxy.LogEntry
 import com.amurcanov.tgwsproxy.LogManager
+import com.amurcanov.tgwsproxy.R
 import com.amurcanov.tgwsproxy.SettingsStore
 import kotlinx.coroutines.launch
 
@@ -114,13 +115,13 @@ fun LogsTab(settingsStore: SettingsStore) {
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            LogFilterChip("INFO", savedInfo && !savedNull, true, modifier = Modifier.weight(1f)) {
+            LogFilterChip(stringResource(R.string.log_info), savedInfo && !savedNull, true, modifier = Modifier.weight(1f)) {
                 scope.launch { settingsStore.saveLogFilters(false, !savedInfo, savedError, false) }
             }
-            LogFilterChip("ERROR", savedError && !savedNull, true, modifier = Modifier.weight(1f)) {
+            LogFilterChip(stringResource(R.string.log_errors), savedError && !savedNull, true, modifier = Modifier.weight(1f)) {
                 scope.launch { settingsStore.saveLogFilters(false, savedInfo, !savedError, false) }
             }
-            LogFilterChip("NULL", savedNull, true, modifier = Modifier.weight(1f)) {
+            LogFilterChip(stringResource(if (savedNull) R.string.log_hidden else R.string.log_hide), savedNull, true, modifier = Modifier.weight(1f)) {
                 scope.launch { settingsStore.saveLogFilters(false, false, false, !savedNull) }
             }
         }
@@ -232,7 +233,7 @@ private fun LogLine(entry: LogEntry) {
         Spacer(modifier = Modifier.width(6.dp))
 
         Text(
-            text = entry.message,
+            text = displayLogMessage(entry.message),
             color = color,
             fontSize = 13.sp,
             fontFamily = FontFamily.Monospace,
@@ -240,5 +241,19 @@ private fun LogLine(entry: LogEntry) {
             lineHeight = 17.sp,
             modifier = Modifier.weight(1f)
         )
+    }
+}
+
+private val cloudflareFailure = Regex("""^CF fail (\S+)(?: via (\S+))?: (.+)$""")
+
+@Composable
+private fun displayLogMessage(raw: String): String {
+    val match = cloudflareFailure.matchEntire(raw) ?: return raw
+    val (host, ip, details) = match.destructured
+    val address = if (ip.isEmpty()) host else "$host ($ip)"
+    return when (details) {
+        "timeout" -> stringResource(R.string.log_cloudflare_timeout, address)
+        "canceled" -> stringResource(R.string.log_cloudflare_canceled, address)
+        else -> stringResource(R.string.log_cloudflare_failed, address, details)
     }
 }

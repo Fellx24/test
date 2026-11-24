@@ -6,10 +6,10 @@
     <string name="section_launch">Launch</string>
     <string name="apply_in_telegram">Apply in Telegram</string>
     <string name="youtube_title">YouTube</string>
-    <string name="youtube_summary">Processes YouTube domains for browsers and other YouTube clients. The Telegram proxy can run at the same time.</string>
+    <string name="youtube_summary">Watch YouTube in a browser or in the app you normally use. You can leave the Telegram proxy running.</string>
     <string name="youtube_enable">Enable YouTube</string>
     <string name="youtube_disable">Disable YouTube</string>
-    <string name="youtube_permission_denied">Allow the VPN connection to enable YouTube.</string>
+    <string name="youtube_permission_denied">Accept the Android VPN request to continue.</string>
     <string name="youtube_start_failed">Could not start the YouTube VPN.</string>
     <string name="youtube_stopping">Stopping…</string>
     <string name="youtube_vpn_running">YouTube VPN is active</string>
@@ -41,7 +41,14 @@
     <string name="telegram_not_found">Telegram not found!</string>
     <string name="event_log">Event log</string>
     <string name="clear">Clear</string>
-    <string name="null_logs_disabled">NULL - logs disabled</string>
+    <string name="log_info">Events</string>
+    <string name="log_errors">Errors</string>
+    <string name="log_hide">Hide</string>
+    <string name="log_hidden">Hidden</string>
+    <string name="log_cloudflare_timeout">Cloudflare took too long to respond · %1$s</string>
+    <string name="log_cloudflare_canceled">Cloudflare connection canceled · %1$s</string>
+    <string name="log_cloudflare_failed">Could not connect to Cloudflare · %1$s\n%2$s</string>
+    <string name="null_logs_disabled">The log is hidden</string>
     <string name="info">Info</string>
     <string name="update_checking">Checking GitHub releases...</string>
     <string name="update_available_on_github">Version %1$s is available on GitHub</string>
@@ -108,7 +115,7 @@
     <string name="donate_android_author">You can donate to the author of this Android app here</string>
     <string name="donate_original_author">You can donate to the author of the original idea here</string>
     <string name="update_available_title">Update available</string>
-    <string name="update_available_description">Download the update and confirm it in the Android installer.</string>
+    <string name="update_available_description">Tap Update. Android will ask you to confirm the installation.</string>
     <string name="update_action">Update</string>
     <string name="update_retry_action">Retry</string>
     <string name="update_preparing">Downloading and verifying the APK…</string>

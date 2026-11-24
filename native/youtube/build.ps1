@@ -34,6 +34,12 @@ Get-PinnedSource (Join-Path $hevTunnel 'third-part/hev-task-system') 'heiher/hev
 Get-PinnedSource (Join-Path $hevTunnel 'third-part/lwip') 'heiher/lwip' '8115cd6150ab32500db3d4d8bd8ad7ec6648534c'
 Get-PinnedSource (Join-Path $hevTunnel 'third-part/yaml') 'heiher/yaml' '0c82efd10dc67b9e7f159d2c7f5d1dc3c1b5bc11'
 
+$patchedByeDpi = Join-Path $Dependencies 'youtube-byedpi-sources'
+New-Item -ItemType Directory -Path $patchedByeDpi -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $byeDpi 'main.c'), (Join-Path $byeDpi 'extend.c') -Destination $patchedByeDpi
+& git -C $patchedByeDpi apply --ignore-space-change (Join-Path $PSScriptRoot 'byedpi-host-suffix.patch')
+if ($LASTEXITCODE -ne 0) { throw 'Could not patch the ByeDPI hostname matcher.' }
+
 $hevOutput = Join-Path $Dependencies 'youtube-hev-libs'
 $hevObjects = Join-Path $Dependencies 'youtube-hev-obj'
 & (Join-Path $Ndk 'ndk-build.cmd') 'NDK_PROJECT_PATH=null' "APP_BUILD_SCRIPT=$hevTunnel/Android.mk" `
@@ -42,14 +48,15 @@ $hevObjects = Join-Path $Dependencies 'youtube-hev-obj'
     "NDK_OUT=$hevObjects" "NDK_LIBS_OUT=$hevOutput" -j4
 if ($LASTEXITCODE -ne 0) { throw 'The Android packet relay failed to build.' }
 
-$sources = @('conev.c', 'proxy.c', 'desync.c', 'packets.c', 'mpool.c', 'extend.c') |
+$sources = @('conev.c', 'proxy.c', 'desync.c', 'packets.c', 'mpool.c') |
     ForEach-Object { Join-Path $byeDpi $_ }
+$sources += Join-Path $patchedByeDpi 'extend.c'
 $targets = [ordered]@{ 'arm64-v8a' = 'aarch64-linux-android24'; 'armeabi-v7a' = 'armv7a-linux-androideabi21' }
 foreach ($abi in $targets.Keys) {
     $output = Join-Path $project "app/src/main/jniLibs/$abi"
     $library = Join-Path $output 'libyoutube-dpi.so'
     & (Join-Path $toolchain 'clang.exe') "--target=$($targets[$abi])" -D_GNU_SOURCE -Wno-macro-redefined `
-        -Os -fPIC -ffunction-sections -fdata-sections -fvisibility=hidden -shared "-I$byeDpi" `
+        -Os -fPIC -ffunction-sections -fdata-sections -fvisibility=hidden -shared "-I$patchedByeDpi" "-I$byeDpi" `
         '-Wl,--gc-sections,--no-undefined,-z,max-page-size=16384,-soname,libyoutube-dpi.so' `
         (Join-Path $PSScriptRoot 'youtube-dpi.c') @sources -o $library
     if ($LASTEXITCODE -ne 0) { throw "ByeDPI failed to build for $abi." }
