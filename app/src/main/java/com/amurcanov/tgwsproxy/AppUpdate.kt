@@ -20,7 +20,6 @@ const val UPDATE_DIALOG_ACTION_UPDATE = "update"
 
 private const val UPDATE_LOG_TAG = "TgWsProxy"
 private const val MAX_RELEASE_BYTES = 1024 * 1024
-internal const val UPDATE_APK_NAME = "tg-ws-proxy-android.apk"
 internal const val MAX_UPDATE_APK_BYTES = 128L * 1024 * 1024
 
 private val repositoryName = Regex("[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}")
@@ -108,6 +107,9 @@ suspend fun fetchLatestReleaseInfo(): AppReleaseInfo? = withContext(Dispatchers.
 internal fun updateVersionNumber(tag: String): String? =
     releaseVersion.matchEntire(tag)?.groupValues?.get(1)
 
+internal fun expectedUpdateApkName(tag: String): String? =
+    updateVersionNumber(tag)?.let { "TG-WS-Proxy-$it.apk" }
+
 fun isNewerVersion(local: String, remote: String): Boolean {
     val localParts = versionParts(local) ?: return false
     val remoteParts = versionParts(remote) ?: return false
@@ -121,8 +123,8 @@ fun isNewerVersion(local: String, remote: String): Boolean {
 
 internal fun expectedUpdateDownloadUrl(tag: String): String? {
     val repo = configuredUpdateRepository() ?: return null
-    if (updateVersionNumber(tag) == null) return null
-    return "https://github.com/$repo/releases/download/$tag/$UPDATE_APK_NAME"
+    val apkName = expectedUpdateApkName(tag) ?: return null
+    return "https://github.com/$repo/releases/download/$tag/$apkName"
 }
 
 private fun parseRelease(release: JSONObject, repo: String): AppReleaseInfo? {
@@ -133,10 +135,11 @@ private fun parseRelease(release: JSONObject, repo: String): AppReleaseInfo? {
     if (release.optString("html_url") != releaseUrl) return null
 
     val expectedDownload = expectedUpdateDownloadUrl(tag) ?: return null
+    val expectedApkName = expectedUpdateApkName(tag) ?: return null
     val assets = release.optJSONArray("assets") ?: return null
     val asset = (0 until assets.length())
         .mapNotNull(assets::optJSONObject)
-        .singleOrNull { it.optString("name") == UPDATE_APK_NAME }
+        .singleOrNull { it.optString("name") == expectedApkName }
         ?: return null
     if (asset.optString("state") != "uploaded" ||
         asset.optString("browser_download_url") != expectedDownload
