@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo === TG WS Proxy APK Build Script ===
-echo === Output: 3 APKs (universal, arm64-v8a, armeabi-v7a) ===
+echo === Output: 3 APK variants and the updater APK ===
 echo.
 
 set "VERSION_NAME="
@@ -59,6 +59,8 @@ set "APK_DIR=app\build\outputs\apk"
 if exist "%APK_DIR%\universal\release\app-universal-release.apk" (
     copy /Y "%APK_DIR%\universal\release\app-universal-release.apk" "app\release\%RELEASE_PREFIX%-universal.apk" >nul
     for %%F in ("app\release\%RELEASE_PREFIX%-universal.apk") do echo   [OK] %%~nxF  [%%~zF bytes]
+    copy /Y "%APK_DIR%\universal\release\app-universal-release.apk" "app\release\tg-ws-proxy-android.apk" >nul
+    for %%F in ("app\release\tg-ws-proxy-android.apk") do echo   [OK] updater: %%~nxF  [%%~zF bytes]
 ) else (
     echo   [!!] Universal APK not found
 )
@@ -84,6 +86,7 @@ echo.
 echo   %RELEASE_PREFIX%-universal.apk    - все архитектуры в одном APK
 echo   %RELEASE_PREFIX%-v8a-minsdk24.apk - только 64-bit ARM
 echo   %RELEASE_PREFIX%-v7a-minsdk21.apk - только 32-bit ARM
+echo   tg-ws-proxy-android.apk           - имя файла для автообновления
 
 echo.
 pause
