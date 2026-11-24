@@ -125,7 +125,11 @@ class ProxyService : Service() {
     private fun startProxy(bindIp: String, port: Int, ips: String, poolSize: Int = 4,
                            cfEnabled: Boolean = true, cfPriority: Boolean = true,
                            cfDomain: String = "", secretKey: String = "", cfUseWs80: Boolean = false) {
-        if (_isRunning.value || stopInProgress) return
+        if (_isRunning.value || stopInProgress) {
+            Log.w(TAG, "Telegram proxy start ignored (already running or stopping)")
+            return
+        }
+        Log.i(TAG, "Telegram proxy start requested on $bindIp:$port")
 
         // Save params for restart
         lastBindIp = bindIp
@@ -170,6 +174,8 @@ class ProxyService : Service() {
                         delay(3000)
                         stopProxy()
                     }
+                } else {
+                    Log.i(TAG, "Telegram proxy core started on $bindIp:$port")
                 }
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to start proxy via JNA", e)
@@ -329,7 +335,11 @@ class ProxyService : Service() {
     }
 
     private fun stopProxy() {
-        if (stopInProgress) return
+        if (stopInProgress) {
+            Log.d(TAG, "Telegram proxy stop ignored (already stopping)")
+            return
+        }
+        Log.i(TAG, "Telegram proxy stop requested")
         stopInProgress = true
         restartJob?.cancel()
         restartJob = null
@@ -509,6 +519,7 @@ class ProxyService : Service() {
     }
 
     override fun onDestroy() {
+        Log.i(TAG, "Telegram proxy service destroyed (running=${_isRunning.value})")
         restartJob?.cancel()
         restartJob = null
         watchdogJob?.cancel()

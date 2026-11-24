@@ -576,6 +576,7 @@ private fun AppBackdrop(modifier: Modifier = Modifier) {
  */
 object LogManager {
     val logs = MutableStateFlow<List<LogEntry>>(emptyList())
+    private val appLogTags = setOf("TgWsProxy", "ProxyService", "YoutubeVpnService")
     private var job: Job? = null
     private var logcatProcess: Process? = null
     private val nextKey = AtomicLong(0)
@@ -679,6 +680,14 @@ object LogManager {
         var message: String
         val isError: Boolean
         val priority: Int
+        val tagStart = raw.indexOf('/')
+        val tagEnd = if (tagStart >= 0) raw.indexOf(':', tagStart + 1) else -1
+        val logcatTag = if (tagEnd > tagStart) {
+            raw.substring(tagStart + 1, tagEnd).substringBefore('(').trim()
+        } else {
+            ""
+        }
+        val logcatLevel = raw.substringBefore('/').trim().lastOrNull()
 
         when {
             raw.contains("[ERROR]") -> {
@@ -696,9 +705,12 @@ object LogManager {
                 isError = false
                 priority = 3 // Log.DEBUG
             }
-            raw.contains("TgWsProxy") -> {
-                // Info doesn't have a prefix, so we strip basically everything up to the actual message
-                var msg = raw.substringAfter("TgWsProxy:").trim()
+            raw.contains("TgWsProxy") || logcatTag in appLogTags -> {
+                var msg = if (tagEnd > tagStart && logcatTag in appLogTags) {
+                    raw.substring(tagEnd + 1).trim()
+                } else {
+                    raw.substringAfter("TgWsProxy:").trim()
+                }
                 if (msg.startsWith("[ERROR]") || msg.startsWith("[WARN]") || msg.startsWith("[DEBUG]")) {
                      return null // Handled above, but just in case
                 }
@@ -712,8 +724,13 @@ object LogManager {
                 }
 
                 message = msg
-                isError = false
-                priority = 4 // Log.INFO
+                priority = when (logcatLevel) {
+                    'E', 'F' -> 6
+                    'W' -> 5
+                    'D', 'V' -> 3
+                    else -> 4
+                }
+                isError = priority == 6
             }
             else -> return null
         }
@@ -724,6 +741,7 @@ object LogManager {
 
         val isEssential = listOf(
             "pool", "key:", "started", "address:", "error", "failed", "blocked",
+            "YouTube", "VPN", "ProxyService", "server check", "Проверка серверов",
             "Пул", "Ключ:", "запущен", "Адрес:", "ошибка", "провалены", "заблокирован"
         ).any { marker -> message.contains(marker, ignoreCase = true) }
 
