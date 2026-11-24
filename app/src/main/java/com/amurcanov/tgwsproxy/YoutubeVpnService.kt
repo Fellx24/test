@@ -10,6 +10,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.Keep
 import androidx.core.app.NotificationCompat
@@ -52,10 +53,12 @@ class YoutubeVpnService : VpnService() {
     enum class Status { Off, Starting, Testing, On, Stopping, Failed }
 
     private data class BypassProfile(val id: Int, val name: String)
+    private data class ProbeEndpoint(val host: String, val httpPath: String? = null)
     private data class ServerProbe(
         val host: String,
         val reachable: Boolean,
         val elapsedMs: Long,
+        val httpStatus: Int? = null,
         val error: String? = null
     )
     private data class ProfileProbe(val profile: BypassProfile, val reachableCount: Int)
@@ -63,6 +66,9 @@ class YoutubeVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var session: Job? = null
     private var destroyed = false
+    private var previousTunnelStats: LongArray? = null
+    private var lastTunnelStatsLogAtMs = 0L
+    private var tunnelStatsWarningLogged = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -205,15 +211,15 @@ class YoutubeVpnService : VpnService() {
             updateForeground(R.string.youtube_testing)
             _status.value = Status.Testing
         }
-        Log.i(TAG, "YouTube server check started (${PROBE_HOSTS.size} endpoints)")
+        Log.i(TAG, "YouTube server check started (${PROBE_ENDPOINTS.size} endpoints)")
 
         var best: ProfileProbe? = null
         for (profile in BYPASS_PROFILES) {
             coroutineContext.ensureActive()
             val result = probeProfile(profile)
             if (best == null || result.reachableCount > best.reachableCount) best = result
-            if (result.reachableCount == PROBE_HOSTS.size) {
-                Log.i(TAG, "${profile.name} reached all ${PROBE_HOSTS.size} YouTube endpoints")
+            if (result.reachableCount == PROBE_ENDPOINTS.size) {
+                Log.i(TAG, "${profile.name} reached all ${PROBE_ENDPOINTS.size} YouTube endpoints")
                 return profile
             }
         }
@@ -225,7 +231,7 @@ class YoutubeVpnService : VpnService() {
             Log.w(
                 TAG,
                 "No profile reached every endpoint; using ${chosen.profile.name} " +
-                    "(${chosen.reachableCount}/${PROBE_HOSTS.size} reachable)"
+                    "(${chosen.reachableCount}/${PROBE_ENDPOINTS.size} reachable)"
             )
         }
         return chosen.profile
@@ -241,29 +247,31 @@ class YoutubeVpnService : VpnService() {
 
         try {
             val results = coroutineScope {
-                PROBE_HOSTS.map { host ->
-                    async(Dispatchers.IO) { probeServer(port, host) }
+                PROBE_ENDPOINTS.map { endpoint ->
+                    async(Dispatchers.IO) { probeServer(port, endpoint) }
                 }.awaitAll()
             }
             results.forEach { result ->
                 if (result.reachable) {
-                    Log.i(TAG, "YouTube server ${result.host}: TLS available (${result.elapsedMs} ms)")
+                    val response = result.httpStatus?.let { "; HTTP headers available (status $it)" }.orEmpty()
+                    Log.i(TAG, "YouTube server ${result.host}: TLS available$response (${result.elapsedMs} ms)")
                 } else {
                     Log.w(TAG, "YouTube server ${result.host}: ${result.error ?: "unavailable"}")
                 }
             }
             val count = results.count { it.reachable }
-            Log.i(TAG, "${profile.name}: $count/${PROBE_HOSTS.size} YouTube servers available")
+            Log.i(TAG, "${profile.name}: $count/${PROBE_ENDPOINTS.size} YouTube servers available")
             return ProfileProbe(profile, count)
         } finally {
             YoutubeDpi.stop()
         }
     }
 
-    private fun probeServer(port: Int, host: String): ServerProbe {
+    private fun probeServer(port: Int, endpoint: ProbeEndpoint): ServerProbe {
         val startedAt = System.nanoTime()
         var tlsSocket: SSLSocket? = null
         val socket = Socket()
+        val host = endpoint.host
         return try {
             socket.connect(InetSocketAddress(IPV4_LOOPBACK, port), PROBE_TIMEOUT_MS)
             socket.soTimeout = PROBE_TIMEOUT_MS
@@ -278,13 +286,24 @@ class YoutubeVpnService : VpnService() {
                 throw SSLPeerUnverifiedException("certificate name does not match")
             }
 
-            ServerProbe(host, true, elapsedMillis(startedAt))
+            val httpStatus = endpoint.httpPath?.let { probeHttpStatus(tls, host, it) }
+            ServerProbe(host, true, elapsedMillis(startedAt), httpStatus = httpStatus)
         } catch (error: Exception) {
-            ServerProbe(host, false, elapsedMillis(startedAt), probeError(error))
+            ServerProbe(host, false, elapsedMillis(startedAt), error = probeError(error))
         } finally {
             runCatching { tlsSocket?.close() }
             runCatching { socket.close() }
         }
+    }
+
+    private fun probeHttpStatus(tls: SSLSocket, host: String, path: String): Int {
+        val request = "HEAD $path HTTP/1.1\r\nHost: $host\r\nConnection: close\r\n\r\n"
+        tls.outputStream.write(request.toByteArray(Charsets.US_ASCII))
+        tls.outputStream.flush()
+
+        val statusLine = tls.inputStream.bufferedReader(Charsets.US_ASCII).readLine()
+            ?: throw EOFException("HTTP connection closed before response headers")
+        return HttpStatusLine.parse(statusLine)
     }
 
     private fun connectSocks5(socket: Socket, host: String) {
@@ -354,6 +373,39 @@ class YoutubeVpnService : VpnService() {
         check(YoutubeDpi.isRunning() && YoutubeTunnel.TProxyIsRunning()) {
             "A YouTube networking component stopped"
         }
+
+        val stats = runCatching { YoutubeTunnel.TProxyGetStats() }.getOrNull()
+        if (stats == null || stats.size != TUNNEL_STATS_FIELDS) {
+            if (!tunnelStatsWarningLogged) {
+                Log.w(TAG, "TUN packet counters are unavailable; playback flow cannot be diagnosed")
+                tunnelStatsWarningLogged = true
+            }
+            previousTunnelStats = null
+            return
+        }
+
+        tunnelStatsWarningLogged = false
+        val now = SystemClock.elapsedRealtime()
+        val previous = previousTunnelStats
+        if (previous == null) {
+            previousTunnelStats = stats.copyOf()
+            lastTunnelStatsLogAtMs = now
+            Log.i(TAG, "TUN packet counters initialized: TX ${stats[0]} packets/${stats[1]} bytes, " +
+                "RX ${stats[2]} packets/${stats[3]} bytes")
+            return
+        }
+
+        val elapsedMs = now - lastTunnelStatsLogAtMs
+        if (elapsedMs >= TUNNEL_STATS_LOG_INTERVAL_MS) {
+            val delta = LongArray(TUNNEL_STATS_FIELDS) { index ->
+                (stats[index] - previous[index]).coerceAtLeast(0L)
+            }
+            val seconds = elapsedMs / 1_000L
+            Log.i(TAG, "TUN traffic +${seconds}s: TX ${delta[0]} packets/${delta[1]} bytes, " +
+                "RX ${delta[2]} packets/${delta[3]} bytes")
+            previousTunnelStats = stats.copyOf()
+            lastTunnelStatsLogAtMs = now
+        }
     }
 
     private fun updateForeground(message: Int) {
@@ -400,14 +452,16 @@ class YoutubeVpnService : VpnService() {
         private const val IPV6 = "fd00:7467:7773::1"
         private const val HTTPS_PORT = 443
         private const val PROBE_TIMEOUT_MS = 2_500
-        private val PROBE_HOSTS = listOf(
-            "www.youtube.com",
-            "redirector.googlevideo.com",
-            "youtubei.googleapis.com",
-            "jnn-pa.googleapis.com",
-            "i.ytimg.com",
-            "www.youtubekids.com",
-            "music.youtube.com"
+        private const val TUNNEL_STATS_FIELDS = 4
+        private const val TUNNEL_STATS_LOG_INTERVAL_MS = 10_000L
+        private val PROBE_ENDPOINTS = listOf(
+            ProbeEndpoint("www.youtube.com"),
+            ProbeEndpoint("redirector.googlevideo.com", "/videoplayback"),
+            ProbeEndpoint("youtubei.googleapis.com"),
+            ProbeEndpoint("jnn-pa.googleapis.com"),
+            ProbeEndpoint("i.ytimg.com"),
+            ProbeEndpoint("www.youtubekids.com"),
+            ProbeEndpoint("music.youtube.com")
         )
         private val BYPASS_PROFILES = listOf(
             BypassProfile(0, "Разделение SNI и TLS-записи"),

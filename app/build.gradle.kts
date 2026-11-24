@@ -143,4 +143,6 @@ dependencies {
     // JNA for easy C-shared library calls
     implementation("net.java.dev.jna:jna:5.14.0@aar")
     implementation("androidx.compose.material:material-icons-extended")
+
+    testImplementation("junit:junit:4.13.2")
 }

@@ -10,7 +10,7 @@
      }
 --- a/extend.c
 +++ b/extend.c
-@@ -196,9 +196,22 @@
+@@ -196,9 +196,25 @@
          len = parse_http(buffer, n, &host, 0);
      }
      assert(len == 0 || host != 0);
@@ -20,6 +20,7 @@
 -    struct elem *v = mem_get(hosts, host, len);
 -    return v && v->len <= len;
 +    char name[254];
++    char exact_name[255];
 +    if (len <= 0 || (size_t)len > sizeof(name)) {
 +        return false;
 +    }
@@ -30,11 +31,13 @@
 +        char ch = host[i];
 +        name[i] = ch >= 'A' && ch <= 'Z' ? ch + ('a' - 'A') : ch;
 +    }
-+    // Exact tree keys keep overlapping suffixes in a consistent order.
++    // Match label-boundary suffixes; leading-dot entries are exact-only.
 +    for (int i = 0; i < len; ++i) {
 +        if ((i == 0 || name[i - 1] == '.') && mem_get(hosts, name + i, len - i)) {
 +            return true;
 +        }
 +    }
-+    return false;
++    exact_name[0] = '.';
++    memcpy(exact_name + 1, name, len);
++    return mem_get(hosts, exact_name, len + 1) != NULL;
  }

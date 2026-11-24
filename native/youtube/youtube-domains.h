@@ -44,4 +44,19 @@
     " youtube.sk youtube.sn youtube.soy youtube.sv youtube.tn" \
     " youtube.tv youtube.ua youtube.ug youtube.uy youtube.vn"
 
+/*
+ * Discord's Core host suffixes. The attachment upload host is exact-only and
+ * uses the leading-dot marker handled by the ByeDPI host matcher.
+ * Source: v2fly/domain-list-community data/discord.
+ */
+#define DISCORD_DOMAINS \
+    "dis.gd discord.co discord.com discord.design discord.dev discord.gg" \
+    " discord.gift discord.gifts discord.media discord.new discord.store" \
+    " discord.tools discord-activities.com discordactivities.com" \
+    " discordapp.com discordapp.net discordmerch.com discordpartygames.com" \
+    " discordsays.com discordstatus.com"
+
+#define DISCORD_EXACT_HOSTS \
+    ".discord-attachments-uploads-prd.storage.googleapis.com"
+
 #endif

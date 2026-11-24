@@ -42,13 +42,50 @@ Get-PinnedSource (Join-Path $hevTunnel 'third-part/lwip') 'heiher/lwip' '8115cd6
 Get-PinnedSource (Join-Path $hevTunnel 'third-part/yaml') 'heiher/yaml' '0c82efd10dc67b9e7f159d2c7f5d1dc3c1b5bc11'
 
 $hevPatch = Join-Path $PSScriptRoot 'hev-youtube-quic.patch'
-& git -C $hevTunnel apply --unidiff-zero --recount --check --ignore-space-change $hevPatch 2>$null
-if ($LASTEXITCODE -eq 0) {
+$hevSource = Join-Path $hevTunnel 'src/hev-socks5-tunnel.c'
+
+function Test-HevPatchPlacement($SourceText) {
+    $handlerStart = $SourceText.IndexOf('udp_recv_handler (')
+    if ($handlerStart -lt 0) { return $false }
+
+    $handlerEnd = $SourceText.IndexOf('static void', $handlerStart + 1)
+    $dropGuard = $SourceText.IndexOf('if (dns && (port == 443) && (addr->type == IPADDR_TYPE_V4))')
+    return ($handlerEnd -gt $handlerStart) -and ($dropGuard -gt $handlerStart) -and ($dropGuard -lt $handlerEnd)
+}
+
+$hevSourceText = [System.IO.File]::ReadAllText($hevSource)
+$hevPatchMarkers = @(
+    [regex]::Matches($hevSourceText, '(?m)^youtube_host_matches\s*\(').Count,
+    [regex]::Matches($hevSourceText, '(?m)^youtube_udp_target\s*\(').Count,
+    [regex]::Matches($hevSourceText, 'if \(dns && \(port == 443\) && \(addr->type == IPADDR_TYPE_V4\)\)').Count,
+    [regex]::Matches($hevSourceText, 'Drop QUIC to let clients retry over TCP\.').Count
+) -join ','
+
+if ($hevPatchMarkers -eq '1,1,1,1') {
+    if (-not (Test-HevPatchPlacement $hevSourceText)) { throw 'The HEV QUIC drop block is outside udp_recv_handler.' }
+    & git -C $hevTunnel apply --unidiff-zero --recount --reverse --check --ignore-space-change $hevPatch 2>$null
+    if ($LASTEXITCODE -ne 0) { throw 'The HEV source contains the patch markers, but does not match the expected patch.' }
+} elseif ($hevPatchMarkers -eq '0,0,0,0') {
+    & git -C $hevTunnel apply --unidiff-zero --recount --check --ignore-space-change $hevPatch 2>$null
+    if ($LASTEXITCODE -ne 0) { throw 'The HEV source is not clean or the patch no longer applies.' }
+
     & git -C $hevTunnel apply --unidiff-zero --recount --ignore-space-change $hevPatch
     if ($LASTEXITCODE -ne 0) { throw 'Could not patch the HEV UDP relay.' }
-} else {
+
+    $hevSourceText = [System.IO.File]::ReadAllText($hevSource)
+    $hevPatchMarkers = @(
+        [regex]::Matches($hevSourceText, '(?m)^youtube_host_matches\s*\(').Count,
+        [regex]::Matches($hevSourceText, '(?m)^youtube_udp_target\s*\(').Count,
+        [regex]::Matches($hevSourceText, 'if \(dns && \(port == 443\) && \(addr->type == IPADDR_TYPE_V4\)\)').Count,
+        [regex]::Matches($hevSourceText, 'Drop QUIC to let clients retry over TCP\.').Count
+    ) -join ','
+    if ($hevPatchMarkers -ne '1,1,1,1') { throw 'The HEV patch markers are missing, duplicated, or incomplete after patching.' }
+    if (-not (Test-HevPatchPlacement $hevSourceText)) { throw 'The HEV QUIC drop block was not inserted in udp_recv_handler.' }
+
     & git -C $hevTunnel apply --unidiff-zero --recount --reverse --check --ignore-space-change $hevPatch 2>$null
-    if ($LASTEXITCODE -ne 0) { throw 'The HEV source is neither clean nor patched as expected.' }
+    if ($LASTEXITCODE -ne 0) { throw 'The patched HEV source does not match the expected reverse patch.' }
+} else {
+    throw 'The HEV source is partially patched or contains duplicate HEV patch markers; restore a clean pinned dependency.'
 }
 
 $patchedByeDpi = Join-Path $Dependencies 'youtube-byedpi-sources'
@@ -80,4 +117,42 @@ foreach ($abi in $targets.Keys) {
     & (Join-Path $toolchain 'llvm-strip.exe') --strip-unneeded $library
     if ($LASTEXITCODE -ne 0) { throw "Could not strip $library." }
     Copy-Item -LiteralPath (Join-Path $hevOutput "$abi/libhev-socks5-tunnel.so") -Destination $output
+}
+
+$llvmStrings = Join-Path $toolchain 'llvm-strings.exe'
+$llvmReadelf = Join-Path $toolchain 'llvm-readelf.exe'
+$expectedMachines = @{ 'arm64-v8a' = 'AArch64'; 'armeabi-v7a' = 'ARM' }
+$requiredStrings = @{
+    'libyoutube-dpi.so' = @(
+        'googlevideo.com',
+        'discord.com',
+        '.discord-attachments-uploads-prd.storage.googleapis.com'
+    )
+    'libhev-socks5-tunnel.so' = @('youtube.com', 'googlevideo.com')
+}
+
+foreach ($abi in $targets.Keys) {
+    $output = Join-Path $project "app/src/main/jniLibs/$abi"
+    foreach ($libraryName in $requiredStrings.Keys) {
+        $library = Join-Path $output $libraryName
+        if (!(Test-Path -LiteralPath $library) -or (Get-Item -LiteralPath $library).Length -eq 0) {
+            throw "Missing or empty native library: $library"
+        }
+
+        $binaryStrings = & $llvmStrings $library 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "Could not inspect strings in $library" }
+        $binaryStringsText = $binaryStrings -join "`n"
+        foreach ($expectedString in $requiredStrings[$libraryName]) {
+            if ($binaryStringsText -notmatch [regex]::Escape($expectedString)) {
+                throw "Expected '$expectedString' was not found in $library"
+            }
+        }
+
+        $header = & $llvmReadelf -h $library 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { throw "Could not inspect ELF header for $library" }
+        if ($header -notmatch "Machine:\s+$([regex]::Escape($expectedMachines[$abi]))(?:\s|$)") {
+            throw "Unexpected ELF machine for $library; expected $($expectedMachines[$abi])."
+        }
+    }
+    Write-Host "Verified $abi native libraries and ELF architecture ($($expectedMachines[$abi]))."
 }

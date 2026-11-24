@@ -64,7 +64,7 @@ static void *proxy_worker(void *unused)
     args[argc++] = "--ip=127.0.0.1";
     args[argc++] = "--proto=t";
     args[argc++] = "--pf=443";
-    args[argc++] = "--hosts=:" YOUTUBE_DOMAINS;
+    args[argc++] = "--hosts=:" YOUTUBE_DOMAINS " " DISCORD_DOMAINS " " DISCORD_EXACT_HOSTS;
 
     switch (proxy_profile) {
         case 1:
