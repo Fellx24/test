@@ -77,6 +77,11 @@ static void *proxy_worker(void *unused)
             /* Fragment the TLS record in the middle of SNI. */
             args[argc++] = "--tlsrec=3+s";
             break;
+        case 3:
+            /* Send a fake TLS ClientHello with a limited TTL. */
+            args[argc++] = "--fake=-1";
+            args[argc++] = "--ttl=8";
+            break;
         default:
             /* Existing split plus TLS-record method. */
             args[argc++] = "--split=1+s";
@@ -118,7 +123,7 @@ Java_com_amurcanov_tgwsproxy_YoutubeDpi_start(JNIEnv *env, jobject self, jint pr
 {
     (void)env;
     (void)self;
-    if (profile < 0 || profile > 2) return -1;
+    if (profile < 0 || profile > 3) return -1;
 
     pthread_mutex_lock(&lock);
     if (worker_started) {

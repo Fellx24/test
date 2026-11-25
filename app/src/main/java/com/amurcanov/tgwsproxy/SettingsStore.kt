@@ -22,6 +22,7 @@ class SettingsStore(private val context: Context) {
         private const val LEGACY_DIRECT_DC_IP = "149.154.167.220"
         const val DEFAULT_LOG_SHOW_INFO = true
         const val DEFAULT_LOG_SHOW_ERROR = false
+        const val AUTO_YOUTUBE_BYPASS_PROFILE = -1
     }
 
     private object Keys {
@@ -58,6 +59,7 @@ class SettingsStore(private val context: Context) {
         val UPDATE_DIALOG_LAST_ACTION_VERSION = stringPreferencesKey("update_dialog_last_action_version")
         val UPDATE_DIALOG_LAST_ACTION = stringPreferencesKey("update_dialog_last_action")
         val UPDATE_DIALOG_LAST_ACTION_AT = longPreferencesKey("update_dialog_last_action_at")
+        val YOUTUBE_BYPASS_PROFILE = intPreferencesKey("youtube_bypass_profile")
         val DIRECT_DC_DEFAULTS_MIGRATED = booleanPreferencesKey("direct_dc_defaults_migrated")
         val DIRECT_DC_DEFAULTS_V2_MIGRATED = booleanPreferencesKey("direct_dc_defaults_v2_migrated")
     }
@@ -107,9 +109,17 @@ class SettingsStore(private val context: Context) {
     val updateDialogLastActionVersion: Flow<String> = context.dataStore.data.map { it[Keys.UPDATE_DIALOG_LAST_ACTION_VERSION] ?: "" }
     val updateDialogLastAction: Flow<String> = context.dataStore.data.map { it[Keys.UPDATE_DIALOG_LAST_ACTION] ?: "" }
     val updateDialogLastActionAt: Flow<Long> = context.dataStore.data.map { it[Keys.UPDATE_DIALOG_LAST_ACTION_AT] ?: 0L }
+    val youtubeBypassProfile: Flow<Int> = context.dataStore.data.map {
+        it[Keys.YOUTUBE_BYPASS_PROFILE] ?: AUTO_YOUTUBE_BYPASS_PROFILE
+    }
 
     suspend fun saveSecretKey(key: String) {
         context.dataStore.edit { it[Keys.SECRET_KEY] = key }
+    }
+
+    suspend fun saveYoutubeBypassProfile(profileId: Int) {
+        require(profileId in AUTO_YOUTUBE_BYPASS_PROFILE..3) { "Unknown YouTube bypass profile" }
+        context.dataStore.edit { it[Keys.YOUTUBE_BYPASS_PROFILE] = profileId }
     }
 
     suspend fun saveThemeMode(mode: String) {

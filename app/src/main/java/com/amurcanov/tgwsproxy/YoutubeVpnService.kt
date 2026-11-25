@@ -57,11 +57,17 @@ class YoutubeVpnService : VpnService() {
     private data class ServerProbe(
         val host: String,
         val reachable: Boolean,
+        val tlsHandshakeCompleted: Boolean,
         val elapsedMs: Long,
+        val tlsHandshakeElapsedMs: Long? = null,
         val httpStatus: Int? = null,
         val error: String? = null
     )
-    private data class ProfileProbe(val profile: BypassProfile, val reachableCount: Int)
+    private data class ProfileProbe(
+        val profile: BypassProfile,
+        val reachableCount: Int,
+        val tlsHandshakeCount: Int
+    )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var session: Job? = null
@@ -80,6 +86,16 @@ class YoutubeVpnService : VpnService() {
             return START_NOT_STICKY
         }
         if (session != null) return START_NOT_STICKY
+        val requestedProfileId = intent.getIntExtra(
+            EXTRA_BYPASS_PROFILE,
+            SettingsStore.AUTO_YOUTUBE_BYPASS_PROFILE
+        ).let { profileId ->
+            if (profileId == SettingsStore.AUTO_YOUTUBE_BYPASS_PROFILE || BYPASS_PROFILES.any { it.id == profileId }) {
+                profileId
+            } else {
+                SettingsStore.AUTO_YOUTUBE_BYPASS_PROFILE
+            }
+        }
 
         Log.i(TAG, "YouTube local VPN start requested")
         updateForeground(R.string.status_connecting)
@@ -87,7 +103,7 @@ class YoutubeVpnService : VpnService() {
         session = scope.launch {
             var failed = false
             try {
-                engineLock.withLock { runSession() }
+                engineLock.withLock { runSession(requestedProfileId) }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -133,9 +149,9 @@ class YoutubeVpnService : VpnService() {
         }
     }
 
-    private suspend fun runSession() {
+    private suspend fun runSession(requestedProfileId: Int) {
         check(prepare(this) == null) { "Android VPN authorization was revoked" }
-        val profile = selectBypassProfile()
+        val profile = selectBypassProfile(requestedProfileId)
         coroutineContext.ensureActive()
         Log.i(TAG, "YouTube VPN selected ${profile.name}")
 
@@ -206,18 +222,29 @@ class YoutubeVpnService : VpnService() {
         }
     }
 
-    private suspend fun selectBypassProfile(): BypassProfile {
+    private suspend fun selectBypassProfile(requestedProfileId: Int): BypassProfile {
         withContext(Dispatchers.Main.immediate) {
             updateForeground(R.string.youtube_testing)
             _status.value = Status.Testing
         }
-        Log.i(TAG, "YouTube server check started (${PROBE_ENDPOINTS.size} endpoints)")
+        val selectedProfile = BYPASS_PROFILES.firstOrNull { it.id == requestedProfileId }
+        val profiles = selectedProfile?.let { listOf(it) } ?: BYPASS_PROFILES
+        val selectionMode = if (selectedProfile == null) "automatic" else "manual"
+        Log.i(TAG, "YouTube server check started ($selectionMode, ${PROBE_ENDPOINTS.size} endpoints)")
 
         var best: ProfileProbe? = null
-        for (profile in BYPASS_PROFILES) {
+        for (profile in profiles) {
             coroutineContext.ensureActive()
             val result = probeProfile(profile)
-            if (best == null || result.reachableCount > best.reachableCount) best = result
+            val previousBest = best
+            if (
+                previousBest == null ||
+                result.reachableCount > previousBest.reachableCount ||
+                (result.reachableCount == previousBest.reachableCount &&
+                    result.tlsHandshakeCount > previousBest.tlsHandshakeCount)
+            ) {
+                best = result
+            }
             if (result.reachableCount == PROBE_ENDPOINTS.size) {
                 Log.i(TAG, "${profile.name} reached all ${PROBE_ENDPOINTS.size} YouTube endpoints")
                 return profile
@@ -225,13 +252,27 @@ class YoutubeVpnService : VpnService() {
         }
 
         val chosen = checkNotNull(best) { "No YouTube bypass profile could be started" }
+        if (selectedProfile != null) {
+            Log.w(
+                TAG,
+                "Keeping manually selected ${selectedProfile.name} despite " +
+                    "${chosen.reachableCount}/${PROBE_ENDPOINTS.size} complete probes and " +
+                    "${chosen.tlsHandshakeCount}/${PROBE_ENDPOINTS.size} completed TLS handshakes"
+            )
+            return selectedProfile
+        }
         if (chosen.reachableCount == 0) {
-            Log.w(TAG, "No bypass profile reached a YouTube endpoint; using ${chosen.profile.name}")
+            Log.w(
+                TAG,
+                "No bypass profile completed an HTTP probe; using ${chosen.profile.name} " +
+                    "(${chosen.tlsHandshakeCount}/${PROBE_ENDPOINTS.size} TLS handshakes completed)"
+            )
         } else {
             Log.w(
                 TAG,
                 "No profile reached every endpoint; using ${chosen.profile.name} " +
-                    "(${chosen.reachableCount}/${PROBE_ENDPOINTS.size} reachable)"
+                    "(${chosen.reachableCount}/${PROBE_ENDPOINTS.size} complete probes, " +
+                    "${chosen.tlsHandshakeCount}/${PROBE_ENDPOINTS.size} TLS handshakes)"
             )
         }
         return chosen.profile
@@ -242,7 +283,7 @@ class YoutubeVpnService : VpnService() {
         val port = YoutubeDpi.start(profile.id)
         if (port <= 0) {
             Log.e(TAG, "Could not start YouTube bypass profile ${profile.name}")
-            return ProfileProbe(profile, 0)
+            return ProfileProbe(profile, reachableCount = 0, tlsHandshakeCount = 0)
         }
 
         try {
@@ -254,14 +295,29 @@ class YoutubeVpnService : VpnService() {
             results.forEach { result ->
                 if (result.reachable) {
                     val response = result.httpStatus?.let { "; HTTP headers available (status $it)" }.orEmpty()
-                    Log.i(TAG, "YouTube server ${result.host}: TLS available$response (${result.elapsedMs} ms)")
+                    Log.i(
+                        TAG,
+                        "YouTube server ${result.host}: TLS handshake completed in " +
+                            "${result.tlsHandshakeElapsedMs} ms$response (total ${result.elapsedMs} ms)"
+                    )
+                } else if (result.tlsHandshakeCompleted) {
+                    Log.w(
+                        TAG,
+                        "YouTube server ${result.host}: TLS handshake completed in " +
+                            "${result.tlsHandshakeElapsedMs} ms; ${result.error ?: "HTTP probe failed"}"
+                    )
                 } else {
                     Log.w(TAG, "YouTube server ${result.host}: ${result.error ?: "unavailable"}")
                 }
             }
             val count = results.count { it.reachable }
-            Log.i(TAG, "${profile.name}: $count/${PROBE_ENDPOINTS.size} YouTube servers available")
-            return ProfileProbe(profile, count)
+            val handshakeCount = results.count { it.tlsHandshakeCompleted }
+            Log.i(
+                TAG,
+                "${profile.name}: $handshakeCount/${PROBE_ENDPOINTS.size} TLS handshakes completed; " +
+                    "$count/${PROBE_ENDPOINTS.size} TLS/certificate probes completed"
+            )
+            return ProfileProbe(profile, count, handshakeCount)
         } finally {
             YoutubeDpi.stop()
         }
@@ -270,26 +326,60 @@ class YoutubeVpnService : VpnService() {
     private fun probeServer(port: Int, endpoint: ProbeEndpoint): ServerProbe {
         val startedAt = System.nanoTime()
         var tlsSocket: SSLSocket? = null
+        var tlsHandshakeCompleted = false
+        var tlsHandshakeElapsedMs: Long? = null
         val socket = Socket()
         val host = endpoint.host
+        var stage = "local proxy connection"
         return try {
             socket.connect(InetSocketAddress(IPV4_LOOPBACK, port), PROBE_TIMEOUT_MS)
             socket.soTimeout = PROBE_TIMEOUT_MS
+            stage = "SOCKS5 connect"
             connectSocks5(socket, host)
 
             val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
             val tls = factory.createSocket(socket, host, HTTPS_PORT, true) as SSLSocket
             tlsSocket = tls
             tls.soTimeout = PROBE_TIMEOUT_MS
-            tls.startHandshake()
+            stage = "TLS handshake"
+            val handshakeStartedAt = System.nanoTime()
+            try {
+                tls.startHandshake()
+            } finally {
+                tlsHandshakeElapsedMs = elapsedMillis(handshakeStartedAt)
+            }
+            tlsHandshakeCompleted = true
+            stage = "TLS certificate validation"
             if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(host, tls.session)) {
                 throw SSLPeerUnverifiedException("certificate name does not match")
             }
 
+            stage = "HTTP response"
             val httpStatus = endpoint.httpPath?.let { probeHttpStatus(tls, host, it) }
-            ServerProbe(host, true, elapsedMillis(startedAt), httpStatus = httpStatus)
+            ServerProbe(
+                host = host,
+                reachable = true,
+                tlsHandshakeCompleted = tlsHandshakeCompleted,
+                elapsedMs = elapsedMillis(startedAt),
+                tlsHandshakeElapsedMs = tlsHandshakeElapsedMs,
+                httpStatus = httpStatus
+            )
         } catch (error: Exception) {
-            ServerProbe(host, false, elapsedMillis(startedAt), error = probeError(error))
+            val probeFailure = probeError(error, stage).let { message ->
+                if (stage == "TLS handshake" && tlsHandshakeElapsedMs != null) {
+                    "$message after ${tlsHandshakeElapsedMs} ms"
+                } else {
+                    message
+                }
+            }
+            ServerProbe(
+                host = host,
+                reachable = false,
+                tlsHandshakeCompleted = tlsHandshakeCompleted,
+                elapsedMs = elapsedMillis(startedAt),
+                tlsHandshakeElapsedMs = tlsHandshakeElapsedMs,
+                error = probeFailure
+            )
         } finally {
             runCatching { tlsSocket?.close() }
             runCatching { socket.close() }
@@ -357,13 +447,35 @@ class YoutubeVpnService : VpnService() {
     private fun elapsedMillis(startedAt: Long): Long =
         (System.nanoTime() - startedAt) / 1_000_000L
 
-    private fun probeError(error: Exception): String = when (error) {
-        is SocketTimeoutException -> "timeout"
-        is UnknownHostException -> "DNS failed"
-        is SSLPeerUnverifiedException -> "TLS certificate check failed"
-        is SSLHandshakeException -> "TLS handshake failed"
-        else -> error.message?.lineSequence()?.firstOrNull()?.take(80)
+    private fun probeError(error: Exception, stage: String): String {
+        if (findCause<SocketTimeoutException>(error) != null) {
+            return when (stage) {
+                "TLS handshake" -> "TLS handshake timeout"
+                "TLS certificate validation" -> "TLS certificate validation timeout"
+                "HTTP response" -> "HTTP response timeout after successful TLS handshake"
+                else -> "$stage timeout"
+            }
+        }
+        if (findCause<UnknownHostException>(error) != null) return "DNS failed during $stage"
+        if (findCause<SSLPeerUnverifiedException>(error) != null) return "TLS certificate check failed"
+        if (stage == "TLS handshake" && findCause<SSLHandshakeException>(error) != null) {
+            val detail = error.message?.lineSequence()?.firstOrNull()?.take(60)
+            return if (detail.isNullOrBlank()) "TLS handshake failed" else "TLS handshake failed: $detail"
+        }
+        val detail = error.message?.lineSequence()?.firstOrNull()?.take(60)
             ?: error.javaClass.simpleName
+        return "$stage: $detail"
+    }
+
+    private inline fun <reified T : Throwable> findCause(error: Throwable): T? {
+        var cause: Throwable? = error
+        var depth = 0
+        while (cause != null && depth < 16) {
+            if (cause is T) return cause
+            cause = cause?.cause
+            depth++
+        }
+        return null
     }
 
     private fun checkEngines() {
@@ -442,6 +554,7 @@ class YoutubeVpnService : VpnService() {
     companion object {
         private const val ACTION_START = "com.amurcanov.tgwsproxy.youtube.START"
         private const val ACTION_STOP = "com.amurcanov.tgwsproxy.youtube.STOP"
+        private const val EXTRA_BYPASS_PROFILE = "com.amurcanov.tgwsproxy.youtube.BYPASS_PROFILE"
         private const val TAG = "YoutubeVpnService"
         private const val CHANNEL = "youtube_vpn"
         private const val NOTIFICATION_ID = 102
@@ -466,16 +579,23 @@ class YoutubeVpnService : VpnService() {
         private val BYPASS_PROFILES = listOf(
             BypassProfile(0, "Разделение SNI и TLS-записи"),
             BypassProfile(1, "Разделение и переупорядочивание TLS-пакетов"),
-            BypassProfile(2, "Разделение TLS-записи внутри SNI")
+            BypassProfile(2, "Разделение TLS-записи внутри SNI"),
+            BypassProfile(3, "Fake TLS (TTL 8)")
         )
 
         private val engineLock = Mutex()
         private val _status = MutableStateFlow(Status.Off)
         val status = _status.asStateFlow()
 
-        internal fun start(context: Context) {
+        internal fun start(
+            context: Context,
+            profileId: Int = SettingsStore.AUTO_YOUTUBE_BYPASS_PROFILE
+        ) {
             ContextCompat.startForegroundService(
-                context, Intent(context, YoutubeVpnService::class.java).setAction(ACTION_START)
+                context,
+                Intent(context, YoutubeVpnService::class.java)
+                    .setAction(ACTION_START)
+                    .putExtra(EXTRA_BYPASS_PROFILE, profileId)
             )
         }
 

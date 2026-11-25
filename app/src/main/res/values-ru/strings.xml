@@ -14,6 +14,14 @@
     <string name="youtube_start_failed">VPN для YouTube не запустился. Попробуйте включить его ещё раз.</string>
     <string name="youtube_stopping">Остановка…</string>
     <string name="youtube_vpn_running">VPN для YouTube включён</string>
+    <string name="youtube_method_title">Способ обхода</string>
+    <string name="youtube_method_auto">Автоматический выбор</string>
+    <string name="youtube_method_split_tls">Разделение SNI и TLS-записи</string>
+    <string name="youtube_method_disorder_tls">Разделение с изменением порядка пакетов</string>
+    <string name="youtube_method_tls_sni">Разделение TLS-записи внутри SNI</string>
+    <string name="youtube_method_fake_tls">Fake TLS (TTL 8)</string>
+    <string name="youtube_method_note">Способ применится при следующем включении VPN.</string>
+    <string name="youtube_fake_tls_note">Fake TLS использует TTL 8; результат зависит от маршрута в вашей сети.</string>
     <string name="copied">Скопировано</string>
     <string name="copy">Скопировать</string>
     <string name="direct_mode">Прямое</string>

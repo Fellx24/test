@@ -5,30 +5,55 @@ import android.net.VpnService
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amurcanov.tgwsproxy.R
+import com.amurcanov.tgwsproxy.SettingsStore
 import com.amurcanov.tgwsproxy.YoutubeVpnService
 import com.amurcanov.tgwsproxy.YoutubeVpnService.Status
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun YoutubeControls() {
     val context = LocalContext.current
     val status by YoutubeVpnService.status.collectAsStateWithLifecycle()
+    val settingsStore = remember(context) { SettingsStore(context) }
+    val scope = rememberCoroutineScope()
+    val selectedProfile by settingsStore.youtubeBypassProfile.collectAsStateWithLifecycle(
+        initialValue = SettingsStore.AUTO_YOUTUBE_BYPASS_PROFILE
+    )
+    val methodOptions = listOf(
+        SettingsStore.AUTO_YOUTUBE_BYPASS_PROFILE to R.string.youtube_method_auto,
+        0 to R.string.youtube_method_split_tls,
+        1 to R.string.youtube_method_disorder_tls,
+        2 to R.string.youtube_method_tls_sni,
+        3 to R.string.youtube_method_fake_tls
+    )
+    val canChangeMethod = status == Status.Off || status == Status.Failed
 
     fun message(resource: Int) = Toast.makeText(context, resource, Toast.LENGTH_SHORT).show()
 
     fun start() {
         try {
-            YoutubeVpnService.start(context)
+            YoutubeVpnService.start(context, selectedProfile)
         } catch (error: IllegalStateException) {
             message(R.string.youtube_start_failed)
         } catch (error: SecurityException) {
@@ -51,6 +76,45 @@ internal fun YoutubeControls() {
             text = stringResource(R.string.youtube_summary),
             color = colors.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            text = stringResource(R.string.youtube_method_title),
+            color = colors.onSurface,
+            style = MaterialTheme.typography.titleSmall
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            methodOptions.forEach { (profileId, label) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = selectedProfile == profileId,
+                            enabled = canChangeMethod,
+                            role = Role.RadioButton
+                        ) {
+                            scope.launch { settingsStore.saveYoutubeBypassProfile(profileId) }
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = selectedProfile == profileId,
+                        onClick = null,
+                        enabled = canChangeMethod
+                    )
+                    Text(
+                        text = stringResource(label),
+                        color = if (canChangeMethod) colors.onSurface else colors.onSurface.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+        Text(
+            text = stringResource(
+                if (selectedProfile == 3) R.string.youtube_fake_tls_note else R.string.youtube_method_note
+            ),
+            color = colors.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
         )
         if (status == Status.Failed) {
             Text(stringResource(R.string.youtube_start_failed), color = colors.error)
