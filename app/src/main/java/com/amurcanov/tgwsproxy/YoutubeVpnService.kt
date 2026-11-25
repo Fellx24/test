@@ -53,7 +53,11 @@ class YoutubeVpnService : VpnService() {
     enum class Status { Off, Starting, Testing, On, Stopping, Failed }
 
     private data class BypassProfile(val id: Int, val name: String)
-    private data class ProbeEndpoint(val host: String, val httpPath: String? = null)
+    private data class ProbeEndpoint(
+        val host: String,
+        val httpPath: String = "/",
+        val port: Int = 443
+    )
     private data class ServerProbe(
         val host: String,
         val reachable: Boolean,
@@ -292,22 +296,26 @@ class YoutubeVpnService : VpnService() {
                     async(Dispatchers.IO) { probeServer(port, endpoint) }
                 }.awaitAll()
             }
-            results.forEach { result ->
+            results.forEachIndexed { index, result ->
+                val endpoint = PROBE_ENDPOINTS[index]
                 if (result.reachable) {
-                    val response = result.httpStatus?.let { "; HTTP headers available (status $it)" }.orEmpty()
+                    val response = result.httpStatus?.let {
+                        "; TCP/${endpoint.port} HEAD ${endpoint.httpPath} returned HTTP $it"
+                    }.orEmpty()
                     Log.i(
                         TAG,
-                        "YouTube server ${result.host}: TLS handshake completed in " +
+                        "YouTube server ${result.host}:${endpoint.port}: TLS handshake completed in " +
                             "${result.tlsHandshakeElapsedMs} ms$response (total ${result.elapsedMs} ms)"
                     )
                 } else if (result.tlsHandshakeCompleted) {
                     Log.w(
                         TAG,
-                        "YouTube server ${result.host}: TLS handshake completed in " +
-                            "${result.tlsHandshakeElapsedMs} ms; ${result.error ?: "HTTP probe failed"}"
+                        "YouTube server ${result.host}:${endpoint.port}: TLS handshake completed in " +
+                            "${result.tlsHandshakeElapsedMs} ms; HEAD ${endpoint.httpPath} failed: " +
+                            (result.error ?: "HTTP probe failed")
                     )
                 } else {
-                    Log.w(TAG, "YouTube server ${result.host}: ${result.error ?: "unavailable"}")
+                    Log.w(TAG, "YouTube server ${result.host}:${endpoint.port}: ${result.error ?: "unavailable"}")
                 }
             }
             val count = results.count { it.reachable }
@@ -315,7 +323,7 @@ class YoutubeVpnService : VpnService() {
             Log.i(
                 TAG,
                 "${profile.name}: $handshakeCount/${PROBE_ENDPOINTS.size} TLS handshakes completed; " +
-                    "$count/${PROBE_ENDPOINTS.size} TLS/certificate probes completed"
+                    "$count/${PROBE_ENDPOINTS.size} TCP/443 HTTP requests received a response"
             )
             return ProfileProbe(profile, count, handshakeCount)
         } finally {
@@ -334,11 +342,11 @@ class YoutubeVpnService : VpnService() {
         return try {
             socket.connect(InetSocketAddress(IPV4_LOOPBACK, port), PROBE_TIMEOUT_MS)
             socket.soTimeout = PROBE_TIMEOUT_MS
-            stage = "SOCKS5 connect"
-            connectSocks5(socket, host)
+            stage = "TCP/${endpoint.port} connect"
+            connectSocks5(socket, host, endpoint.port)
 
             val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
-            val tls = factory.createSocket(socket, host, HTTPS_PORT, true) as SSLSocket
+            val tls = factory.createSocket(socket, host, endpoint.port, true) as SSLSocket
             tlsSocket = tls
             tls.soTimeout = PROBE_TIMEOUT_MS
             stage = "TLS handshake"
@@ -355,7 +363,7 @@ class YoutubeVpnService : VpnService() {
             }
 
             stage = "HTTP response"
-            val httpStatus = endpoint.httpPath?.let { probeHttpStatus(tls, host, it) }
+            val httpStatus = probeHttpStatus(tls, host, endpoint.httpPath)
             ServerProbe(
                 host = host,
                 reachable = true,
@@ -396,7 +404,7 @@ class YoutubeVpnService : VpnService() {
         return HttpStatusLine.parse(statusLine)
     }
 
-    private fun connectSocks5(socket: Socket, host: String) {
+    private fun connectSocks5(socket: Socket, host: String, destinationPort: Int) {
         val input = socket.getInputStream()
         val output = socket.getOutputStream()
         output.write(byteArrayOf(0x05, 0x01, 0x00))
@@ -414,8 +422,8 @@ class YoutubeVpnService : VpnService() {
         request[3] = 0x03
         request[4] = hostBytes.size.toByte()
         hostBytes.copyInto(request, 5)
-        request[request.lastIndex - 1] = (HTTPS_PORT shr 8).toByte()
-        request[request.lastIndex] = HTTPS_PORT.toByte()
+        request[request.lastIndex - 1] = (destinationPort shr 8).toByte()
+        request[request.lastIndex] = destinationPort.toByte()
         output.write(request)
         output.flush()
 
@@ -563,7 +571,6 @@ class YoutubeVpnService : VpnService() {
         private const val IPV4_LOOPBACK = "127.0.0.1"
         private const val DNS_IPV4 = "198.18.0.2"
         private const val IPV6 = "fd00:7467:7773::1"
-        private const val HTTPS_PORT = 443
         private const val PROBE_TIMEOUT_MS = 2_500
         private const val TUNNEL_STATS_FIELDS = 4
         private const val TUNNEL_STATS_LOG_INTERVAL_MS = 10_000L
@@ -580,7 +587,10 @@ class YoutubeVpnService : VpnService() {
             BypassProfile(0, "Разделение SNI и TLS-записи"),
             BypassProfile(1, "Разделение и переупорядочивание TLS-пакетов"),
             BypassProfile(2, "Разделение TLS-записи внутри SNI"),
-            BypassProfile(3, "Fake TLS (TTL 8)")
+            BypassProfile(3, "Fake TLS (TTL 8)"),
+            BypassProfile(4, "Разделение ClientHello в нескольких точках"),
+            BypassProfile(5, "Переупорядочивание частей ClientHello"),
+            BypassProfile(6, "Fake TLS с SNI Google")
         )
 
         private val engineLock = Mutex()

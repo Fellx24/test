@@ -23,6 +23,7 @@ class SettingsStore(private val context: Context) {
         const val DEFAULT_LOG_SHOW_INFO = true
         const val DEFAULT_LOG_SHOW_ERROR = false
         const val AUTO_YOUTUBE_BYPASS_PROFILE = -1
+        const val MAX_YOUTUBE_BYPASS_PROFILE = 6
     }
 
     private object Keys {
@@ -118,7 +119,9 @@ class SettingsStore(private val context: Context) {
     }
 
     suspend fun saveYoutubeBypassProfile(profileId: Int) {
-        require(profileId in AUTO_YOUTUBE_BYPASS_PROFILE..3) { "Unknown YouTube bypass profile" }
+        require(profileId in AUTO_YOUTUBE_BYPASS_PROFILE..MAX_YOUTUBE_BYPASS_PROFILE) {
+            "Unknown YouTube bypass profile"
+        }
         context.dataStore.edit { it[Keys.YOUTUBE_BYPASS_PROFILE] = profileId }
     }
 

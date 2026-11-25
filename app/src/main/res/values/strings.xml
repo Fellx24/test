@@ -20,8 +20,12 @@
     <string name="youtube_method_disorder_tls">Split and reorder packets</string>
     <string name="youtube_method_tls_sni">Split TLS record inside SNI</string>
     <string name="youtube_method_fake_tls">Fake TLS (TTL 8)</string>
+    <string name="youtube_method_multi_split">Split ClientHello at multiple points</string>
+    <string name="youtube_method_multi_disorder">Send ClientHello pieces in reverse order</string>
+    <string name="youtube_method_fake_tls_sni">Fake TLS with SNI google.com</string>
     <string name="youtube_method_note">The method takes effect the next time you enable the VPN.</string>
     <string name="youtube_fake_tls_note">Fake TLS uses TTL 8; results depend on your network route.</string>
+    <string name="youtube_fake_tls_sni_note">Google SNI is only used in the decoy ClientHello; fake packets use TTL 8.</string>
     <string name="copied">Copied</string>
     <string name="copy">Copy</string>
     <string name="direct_mode">Direct</string>

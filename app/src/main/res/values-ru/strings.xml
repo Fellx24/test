@@ -20,8 +20,12 @@
     <string name="youtube_method_disorder_tls">Разделение с изменением порядка пакетов</string>
     <string name="youtube_method_tls_sni">Разделение TLS-записи внутри SNI</string>
     <string name="youtube_method_fake_tls">Fake TLS (TTL 8)</string>
+    <string name="youtube_method_multi_split">Разбить ClientHello в нескольких местах</string>
+    <string name="youtube_method_multi_disorder">Отправить части ClientHello в обратном порядке</string>
+    <string name="youtube_method_fake_tls_sni">Fake TLS с SNI google.com</string>
     <string name="youtube_method_note">Способ применится при следующем включении VPN.</string>
     <string name="youtube_fake_tls_note">Fake TLS использует TTL 8; результат зависит от маршрута в вашей сети.</string>
+    <string name="youtube_fake_tls_sni_note">SNI Google отправляется только в фальшивом ClientHello; для фальшивых пакетов задан TTL 8.</string>
     <string name="copied">Скопировано</string>
     <string name="copy">Скопировать</string>
     <string name="direct_mode">Прямое</string>

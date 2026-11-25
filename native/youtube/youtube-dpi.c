@@ -82,6 +82,25 @@ static void *proxy_worker(void *unused)
             args[argc++] = "--fake=-1";
             args[argc++] = "--ttl=8";
             break;
+        case 4:
+            /* zapret-style multisplit: split at the SNI start and midpoint. */
+            args[argc++] = "--split=1+s";
+            args[argc++] = "--split=0+sm";
+            args[argc++] = "--tlsrec=1+s";
+            break;
+        case 5:
+            /* zapret-style multidisorder across multiple ClientHello positions. */
+            args[argc++] = "--disorder=1+s";
+            args[argc++] = "--disorder=0+sm";
+            args[argc++] = "--tlsrec=1+s";
+            break;
+        case 6:
+            /* Fake TLS with a decoy SNI, combined with a TLS-record split. */
+            args[argc++] = "--fake=-1";
+            args[argc++] = "--ttl=8";
+            args[argc++] = "--fake-sni=www.google.com";
+            args[argc++] = "--tlsrec=1+s";
+            break;
         default:
             /* Existing split plus TLS-record method. */
             args[argc++] = "--split=1+s";
@@ -123,7 +142,7 @@ Java_com_amurcanov_tgwsproxy_YoutubeDpi_start(JNIEnv *env, jobject self, jint pr
 {
     (void)env;
     (void)self;
-    if (profile < 0 || profile > 3) return -1;
+    if (profile < 0 || profile > 6) return -1;
 
     pthread_mutex_lock(&lock);
     if (worker_started) {

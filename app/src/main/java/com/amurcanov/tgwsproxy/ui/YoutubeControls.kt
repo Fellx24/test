@@ -45,7 +45,10 @@ internal fun YoutubeControls() {
         0 to R.string.youtube_method_split_tls,
         1 to R.string.youtube_method_disorder_tls,
         2 to R.string.youtube_method_tls_sni,
-        3 to R.string.youtube_method_fake_tls
+        3 to R.string.youtube_method_fake_tls,
+        4 to R.string.youtube_method_multi_split,
+        5 to R.string.youtube_method_multi_disorder,
+        6 to R.string.youtube_method_fake_tls_sni
     )
     val canChangeMethod = status == Status.Off || status == Status.Failed
 
@@ -111,7 +114,11 @@ internal fun YoutubeControls() {
         }
         Text(
             text = stringResource(
-                if (selectedProfile == 3) R.string.youtube_fake_tls_note else R.string.youtube_method_note
+                when (selectedProfile) {
+                    3 -> R.string.youtube_fake_tls_note
+                    6 -> R.string.youtube_fake_tls_sni_note
+                    else -> R.string.youtube_method_note
+                }
             ),
             color = colors.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall
