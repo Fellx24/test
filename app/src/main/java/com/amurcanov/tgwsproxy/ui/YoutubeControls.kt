@@ -1,6 +1,7 @@
 package com.amurcanov.tgwsproxy.ui
 
 import android.app.Activity
+import android.os.Build
 import android.net.VpnService
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -15,8 +16,11 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -29,7 +33,14 @@ import com.amurcanov.tgwsproxy.R
 import com.amurcanov.tgwsproxy.SettingsStore
 import com.amurcanov.tgwsproxy.YoutubeVpnService
 import com.amurcanov.tgwsproxy.YoutubeVpnService.Status
+import com.amurcanov.tgwsproxy.YouTubeConnectionDiagnostic
+import com.amurcanov.tgwsproxy.YouTubeEndpointCheck
+import com.amurcanov.tgwsproxy.YouTubeProbeIssue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 internal fun YoutubeControls() {
@@ -37,6 +48,9 @@ internal fun YoutubeControls() {
     val status by YoutubeVpnService.status.collectAsStateWithLifecycle()
     val settingsStore = remember(context) { SettingsStore(context) }
     val scope = rememberCoroutineScope()
+    val connectionChecks = remember { mutableStateListOf<YouTubeEndpointCheck>() }
+    var checkingConnection by remember { mutableStateOf(false) }
+    var connectionCheckNotice by remember { mutableStateOf<String?>(null) }
     val selectedProfile by settingsStore.youtubeBypassProfile.collectAsStateWithLifecycle(
         initialValue = SettingsStore.AUTO_YOUTUBE_BYPASS_PROFILE
     )
@@ -146,5 +160,126 @@ internal fun YoutubeControls() {
                 else -> R.string.youtube_enable
             }))
         }
+        Button(
+            onClick = {
+                if (!checkingConnection) {
+                    checkingConnection = true
+                    connectionCheckNotice = null
+                    connectionChecks.clear()
+                    scope.launch {
+                        try {
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                                connectionCheckNotice = context.getString(R.string.youtube_connection_android_10_required)
+                            } else {
+                                coroutineScope {
+                                    CONNECTION_CHECK_ENDPOINTS.forEach { (host, path) ->
+                                        launch {
+                                            val result = try {
+                                                withContext(Dispatchers.IO) {
+                                                    YouTubeConnectionDiagnostic.check(host, path)
+                                                }
+                                            } catch (error: CancellationException) {
+                                                throw error
+                                            } catch (error: Exception) {
+                                                YouTubeEndpointCheck(
+                                                    host = host,
+                                                    endpointIssue = YouTubeProbeIssue.ENDPOINT_FAILED,
+                                                    endpointDetail = error.message?.lineSequence()?.firstOrNull()?.take(100)
+                                                )
+                                            }
+                                            connectionChecks.add(result)
+                                        }
+                                    }
+                                }
+                            }
+                        } finally {
+                            checkingConnection = false
+                        }
+                    }
+                }
+            },
+            enabled = !checkingConnection,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(stringResource(if (checkingConnection) R.string.youtube_connection_checking else R.string.youtube_connection_check))
+        }
+        Text(
+            stringResource(R.string.youtube_connection_direct_note),
+            color = colors.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+        connectionCheckNotice?.let {
+            Text(it, color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+        connectionChecks.forEach { result ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(result.host, color = colors.onSurface, style = MaterialTheme.typography.titleSmall)
+                result.endpointIssue?.let { issue ->
+                    issueLabel(issue, result.endpointDetail)?.let { label ->
+                        Text(label, color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Text(
+                    stringResource(R.string.youtube_connection_dns, result.addresses.joinToString().ifBlank {
+                        issueLabel(result.dnsIssue, result.dnsDetail)
+                            ?: stringResource(R.string.youtube_connection_not_tested)
+                    }),
+                    color = colors.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    stringResource(R.string.youtube_connection_tcp, result.tcpAddress?.let {
+                        stringResource(R.string.youtube_connection_connected_to, it)
+                    } ?: issueLabel(result.tcpIssue, result.tcpDetail)
+                        ?: stringResource(R.string.youtube_connection_not_tested)),
+                    color = colors.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    stringResource(R.string.youtube_connection_tls, when {
+                        result.tlsIssue != null -> issueLabel(result.tlsIssue, result.tlsDetail)
+                            ?: stringResource(R.string.youtube_connection_not_tested)
+                        result.tcpAddress != null -> stringResource(R.string.youtube_connection_verified)
+                        else -> stringResource(R.string.youtube_connection_not_tested)
+                    }),
+                    color = colors.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    stringResource(R.string.youtube_connection_http, result.httpStatus?.let {
+                        stringResource(R.string.youtube_connection_status, it)
+                    } ?: issueLabel(result.httpIssue, result.httpDetail)
+                        ?: stringResource(R.string.youtube_connection_not_tested)),
+                    color = colors.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
     }
+}
+
+private val CONNECTION_CHECK_ENDPOINTS = listOf(
+    "www.youtube.com" to "/",
+    "youtubei.googleapis.com" to "/",
+    "redirector.googlevideo.com" to "/videoplayback",
+    "i.ytimg.com" to "/"
+)
+
+@Composable
+private fun issueLabel(issue: YouTubeProbeIssue?, detail: String?): String? {
+    if (issue == null) return null
+    val label = stringResource(when (issue) {
+        YouTubeProbeIssue.ANDROID_VERSION_UNSUPPORTED -> R.string.youtube_connection_android_10_required
+        YouTubeProbeIssue.DNS_TIMEOUT -> R.string.youtube_connection_dns_timeout
+        YouTubeProbeIssue.DNS_NO_RECORDS -> R.string.youtube_connection_dns_no_records
+        YouTubeProbeIssue.DNS_FAILED -> R.string.youtube_connection_dns_failed
+        YouTubeProbeIssue.TCP_TIMEOUT -> R.string.youtube_connection_tcp_timeout
+        YouTubeProbeIssue.TCP_FAILED -> R.string.youtube_connection_tcp_failed
+        YouTubeProbeIssue.TLS_TIMEOUT -> R.string.youtube_connection_tls_timeout
+        YouTubeProbeIssue.TLS_FAILED -> R.string.youtube_connection_tls_failed
+        YouTubeProbeIssue.HTTP_TIMEOUT -> R.string.youtube_connection_http_timeout
+        YouTubeProbeIssue.HTTP_FAILED -> R.string.youtube_connection_http_failed
+        YouTubeProbeIssue.ENDPOINT_FAILED -> R.string.youtube_connection_endpoint_failed
+    })
+    return if (detail.isNullOrBlank()) label else stringResource(R.string.youtube_connection_issue_detail, label, detail)
 }
